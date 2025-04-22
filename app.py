@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 from collections import defaultdict
 from data import load_data
-from recommender import ReinforcementLearner, create_user_features, find_candidate_movies, score_and_select_movies, calculate_diversity, calculate_coverage
+from recommender import ReinforcementLearner, create_user_features, find_candidate_movies, score_and_select_movies, calculate_coverage
 
 def get_age_bin(age):
     if age < 18:
@@ -34,7 +34,6 @@ def init_session_state(movies, users):
     if 'metrics' not in st.session_state:
         st.session_state.metrics = {
             'all_feedbacks': [],
-            'diversity_scores': [],
             'coverage_scores': []
         }
     if 'age_totals' not in st.session_state:
@@ -76,8 +75,6 @@ def process_feedback(individual_ratings, rl_learner, movies, genre_cols):
     
     avg_feedback = np.mean(list(individual_ratings.values()))
     st.session_state.metrics['all_feedbacks'].append(avg_feedback)
-    diversity = calculate_diversity(movies, st.session_state.current_recommendations)
-    st.session_state.metrics['diversity_scores'].append(diversity)
     coverage = calculate_coverage(movies['movie_id'].unique(), st.session_state.movie_stats.keys())
     st.session_state.metrics['coverage_scores'].append(coverage)
     
@@ -86,7 +83,7 @@ def process_feedback(individual_ratings, rl_learner, movies, genre_cols):
     gender = st.session_state.user_gender
     
     for movie_id, rating in individual_ratings.items():
-        movie_genres = movies.loc[movies['movie_id'] == movie_id, genre_cols].iloc[0]  # Use .loc with column names
+        movie_genres = movies.loc[movies['movie_id'] == movie_id, genre_cols].iloc[0]  
         genres_list = movie_genres[movie_genres == 1].index.tolist()
         for genre in genres_list:
             st.session_state.age_totals[age_bin][genre]['total_rating'] += rating
@@ -186,10 +183,8 @@ def main():
                     st.plotly_chart(fig)
             
             with tab2:
-                if st.session_state.metrics['diversity_scores']:
-                    st.metric("Average Diversity", f"{np.mean(st.session_state.metrics['diversity_scores']):.2%}")
-                    genre_counts = movies[movies['movie_id'].isin(st.session_state.current_recommendations)].iloc[:, 5:24].sum()
-                    st.bar_chart(genre_counts)
+                genre_counts = movies[movies['movie_id'].isin(st.session_state.current_recommendations)].iloc[:, 5:24].sum()
+                st.bar_chart(genre_counts)
             
             with tab3:
                 st.metric("Catalog Coverage", 
