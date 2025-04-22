@@ -15,13 +15,13 @@ class ReinforcementLearner:
             np.log(max(1, total_recommendations)) / (stats['impressions'] + 1e-8))
         return stats['avg_rating'] + exploration
 
-    def update_stats(self, movie_ids, rating, movie_stats, total_recommendations):
-        for movie_id in movie_ids:
+    def update_stats(self, movie_ratings, movie_stats, total_recommendations):
+        for movie_id, rating in movie_ratings.items():
             stats = movie_stats[movie_id]
             stats['impressions'] += 1
             stats['total_rating'] += rating
             stats['avg_rating'] = stats['total_rating'] / (stats['impressions'] + 1e-8)
-        return total_recommendations + len(movie_ids)
+        return total_recommendations + len(movie_ratings)
 
 def create_user_features(age, gender, occupation, scaler, occupation_encoder):
     # Create a DataFrame with the same column names used during fitting

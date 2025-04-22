@@ -35,8 +35,6 @@ def init_session_state(movies, users):
         st.session_state.metrics = {
             'all_feedbacks': [],
             'diversity_scores': [],
-            'precision_scores': [],
-            'recall_scores': [],
             'coverage_scores': []
         }
     if 'age_totals' not in st.session_state:
@@ -50,11 +48,75 @@ def init_session_state(movies, users):
         st.session_state.gender_totals = {gen: {genre: {'total_rating': 0, 'count': 0} for genre in genres} for gen in genders}
         st.session_state.history = []
 
+def render_user_form(users):
+    with st.expander("📝 Enter Your Details", expanded=True):
+        with st.form("user_info"):
+            age = st.number_input("Age", min_value=1, max_value=100, value=25)
+            gender = st.selectbox("Gender", ["M", "F"])
+            occupation = st.selectbox("Occupation", users['occupation'].unique())
+            submitted = st.form_submit_button("🚀 Get Recommendations")
+    return age, gender, occupation, submitted
+
+def render_recommendations(sorted_movies):
+    st.markdown("## 🎥 Your Personal Recommendations")
+    cols = st.columns([3, 2])
+    with cols[0]:
+        for idx, (movie_id, score, cf, ucb) in enumerate(sorted_movies):
+            movie_title = st.session_state.candidate_movies[movie_id]['title']
+            score_display = f"{score:.2f}" if ucb <= 100 else f"{cf:.2f}*"
+            rl_display = "New! 🆕" if st.session_state.movie_stats[movie_id]['impressions'] == 0 else f"{ucb:.2f}"
+            st.markdown(f"**{idx+1}. {movie_title}**  \n📊 Total Score: `{score_display}`  \n👥 Collaborative: `{cf:.2f}` | 🤖 RL Score: `{rl_display}`")
+
+def process_feedback(individual_ratings, rl_learner, movies, genre_cols):
+    st.session_state.total_recommendations = rl_learner.update_stats(
+        individual_ratings,  # Pass the dictionary of movie_id: rating
+        st.session_state.movie_stats,
+        st.session_state.total_recommendations
+    )
+    
+    avg_feedback = np.mean(list(individual_ratings.values()))
+    st.session_state.metrics['all_feedbacks'].append(avg_feedback)
+    diversity = calculate_diversity(movies, st.session_state.current_recommendations)
+    st.session_state.metrics['diversity_scores'].append(diversity)
+    coverage = calculate_coverage(movies['movie_id'].unique(), st.session_state.movie_stats.keys())
+    st.session_state.metrics['coverage_scores'].append(coverage)
+    
+    age_bin = get_age_bin(st.session_state.user_age)
+    occupation = st.session_state.user_occupation
+    gender = st.session_state.user_gender
+    
+    for movie_id, rating in individual_ratings.items():
+        movie_genres = movies.loc[movies['movie_id'] == movie_id, genre_cols].iloc[0]  # Use .loc with column names
+        genres_list = movie_genres[movie_genres == 1].index.tolist()
+        for genre in genres_list:
+            st.session_state.age_totals[age_bin][genre]['total_rating'] += rating
+            st.session_state.age_totals[age_bin][genre]['count'] += 1
+            st.session_state.occupation_totals[occupation][genre]['total_rating'] += rating
+            st.session_state.occupation_totals[occupation][genre]['count'] += 1
+            st.session_state.gender_totals[gender][genre]['total_rating'] += rating
+            st.session_state.gender_totals[gender][genre]['count'] += 1
+    
+    interaction = len(st.session_state.metrics['all_feedbacks'])
+    for demographic_type, totals in zip(
+        ['Age Group', 'Occupation', 'Gender'],
+        [st.session_state.age_totals, st.session_state.occupation_totals, st.session_state.gender_totals]
+    ):
+        for group, genre_totals in totals.items():
+            for genre, data in genre_totals.items():
+                avg_rating = data['total_rating'] / data['count'] if data['count'] > 0 else 0
+                st.session_state.history.append({
+                    'interaction': interaction,
+                    'demographic_type': demographic_type,
+                    'group': group,
+                    'genre': genre,
+                    'avg_rating': avg_rating
+                })
+
 def main():
     st.title("🎬 Movie Recommender Pro+")
     st.markdown("### Advanced Hybrid Recommendation System")
     
-    users, ratings, movies, knn_model, processed_users, scaler, occupation_encoder = load_data()
+    users, ratings, movies, knn_model, processed_users, scaler, occupation_encoder, genre_cols = load_data()
     init_session_state(movies, users)
     
     with st.sidebar.expander("⚙️ System Configuration"):
@@ -63,12 +125,7 @@ def main():
         cf_weight = st.slider("Collaborative Filtering Weight", 0.0, 1.0, 0.7)
         rl_learner = ReinforcementLearner(exploration_factor=exploration_factor, base_exploration=base_exploration)
     
-    with st.expander("📝 Enter Your Details", expanded=True):
-        with st.form("user_info"):
-            age = st.number_input("Age", min_value=1, max_value=100, value=25)
-            gender = st.selectbox("Gender", ["M", "F"])
-            occupation = st.selectbox("Occupation", users['occupation'].unique())
-            submitted = st.form_submit_button("🚀 Get Recommendations")
+    age, gender, occupation, submitted = render_user_form(users)
 
     if submitted:
         st.session_state.user_age = age
@@ -81,8 +138,6 @@ def main():
 
     if st.session_state.candidate_movies:
         st.markdown("---")
-        st.markdown("## 🎥 Your Personal Recommendations")
-        
         sorted_movies = score_and_select_movies(
             st.session_state.candidate_movies,
             rl_learner,
@@ -92,31 +147,19 @@ def main():
         )
         st.session_state.current_recommendations = [movie[0] for movie in sorted_movies]
         
-        cols = st.columns([3,2])
-        with cols[0]:
-            for idx, (movie_id, score, cf, ucb) in enumerate(sorted_movies):
-                movie_title = st.session_state.candidate_movies[movie_id]['title']
-                score_display = f"{score:.2f}" if ucb <= 100 else f"{cf:.2f}*"
-                rl_display = f"{ucb:.2f}" if ucb <= 100 else "New! 🆕"
-                
-                st.markdown(f"""
-                **{idx+1}. {movie_title}**  
-                📊 Total Score: `{score_display}`  
-                👥 Collaborative: `{cf:.2f}` | 🤖 RL Score: `{rl_display}`
-                """)
+        render_recommendations(sorted_movies)
         
-        with cols[1]:
-            with st.expander("🔍 Recommendation Breakdown"):
-                st.markdown("""
-                **Algorithm Components:**
-                - **Collaborative Filtering**: Based on similar users' ratings
-                - **Reinforcement Learning**: Adapts based on system-wide feedback
-                
-                **Score Legend:**
-                - *New! 🆕*: Never-before-recommended movie
-                - *: Initial score without RL history
-                """)
-                st.latex(r'''UCB = \bar{X} + \alpha\sqrt{\frac{\ln N}{n + \epsilon}}''')
+        with st.expander("🔍 Recommendation Breakdown"):
+            st.markdown("""
+            **Algorithm Components:**
+            - **Collaborative Filtering**: Based on similar users' ratings
+            - **Reinforcement Learning**: Adapts based on system-wide feedback
+            
+            **Score Legend:**
+            - *New! 🆕*: Never-before-recommended movie
+            - *: Initial score without RL history
+            """)
+            st.latex(r'''UCB = \bar{X} + \alpha\sqrt{\frac{\ln N}{n + \epsilon}}''')
 
         st.markdown("---")
         with st.form("feedback_form"):
@@ -128,51 +171,7 @@ def main():
                 individual_ratings[movie_id] = rating
 
             if st.form_submit_button("📤 Submit Ratings"):
-                st.session_state.total_recommendations = rl_learner.update_stats(
-                    st.session_state.current_recommendations,
-                    np.mean(list(individual_ratings.values())),
-                    st.session_state.movie_stats,
-                    st.session_state.total_recommendations
-                )
-                
-                avg_feedback = np.mean(list(individual_ratings.values()))
-                st.session_state.metrics['all_feedbacks'].append(avg_feedback)
-                diversity = calculate_diversity(movies, st.session_state.current_recommendations)
-                st.session_state.metrics['diversity_scores'].append(diversity)
-                coverage = calculate_coverage(movies['movie_id'].unique(), st.session_state.movie_stats.keys())
-                st.session_state.metrics['coverage_scores'].append(coverage)
-                
-                age_bin = get_age_bin(st.session_state.user_age)
-                occupation = st.session_state.user_occupation
-                gender = st.session_state.user_gender
-                
-                for movie_id, rating in individual_ratings.items():
-                    movie_genres = movies[movies['movie_id'] == movie_id].iloc[0, 5:24]
-                    genres_list = movie_genres[movie_genres == 1].index.tolist()
-                    for genre in genres_list:
-                        st.session_state.age_totals[age_bin][genre]['total_rating'] += rating
-                        st.session_state.age_totals[age_bin][genre]['count'] += 1
-                        st.session_state.occupation_totals[occupation][genre]['total_rating'] += rating
-                        st.session_state.occupation_totals[occupation][genre]['count'] += 1
-                        st.session_state.gender_totals[gender][genre]['total_rating'] += rating
-                        st.session_state.gender_totals[gender][genre]['count'] += 1
-                
-                interaction = len(st.session_state.metrics['all_feedbacks'])
-                for demographic_type, totals in zip(
-                    ['Age Group', 'Occupation', 'Gender'],
-                    [st.session_state.age_totals, st.session_state.occupation_totals, st.session_state.gender_totals]
-                ):
-                    for group, genre_totals in totals.items():
-                        for genre, data in genre_totals.items():
-                            avg_rating = data['total_rating'] / data['count'] if data['count'] > 0 else 0
-                            st.session_state.history.append({
-                                'interaction': interaction,
-                                'demographic_type': demographic_type,
-                                'group': group,
-                                'genre': genre,
-                                'avg_rating': avg_rating
-                            })
-                
+                process_feedback(individual_ratings, rl_learner, movies, genre_cols)
                 st.success("Feedback recorded! System updating... 🔄")
 
         st.markdown("---")

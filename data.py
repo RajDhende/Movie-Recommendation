@@ -18,6 +18,11 @@ def preprocess_data(users):
     return processed_users, scaler, occupation_encoder
 
 @st.cache_data
+def train_knn(processed_users):
+    features = processed_users.drop('user_id', axis=1).values
+    return NearestNeighbors(n_neighbors=20, metric='cosine').fit(features)
+
+@st.cache_data
 def load_data():
     try:
         users = pd.read_csv('ml-100k/u.user', sep='|', encoding='latin-1', 
@@ -31,12 +36,12 @@ def load_data():
                                    'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western'])
         
         processed_users, scaler, occupation_encoder = preprocess_data(users)
-        features = processed_users.drop('user_id', axis=1).values
-        knn_model = NearestNeighbors(n_neighbors=20, metric='cosine').fit(features)
+        knn_model = train_knn(processed_users)
         
-        return users, ratings, movies, knn_model, processed_users, scaler, occupation_encoder
+        genre_cols = movies.filter(regex='^(Action|Adventure|Animation|Children|Comedy|Crime|Documentary|Drama|Fantasy|Film-Noir|Horror|Musical|Mystery|Romance|Sci-Fi|Thriller|War|Western)$').columns
+        return users, ratings, movies, knn_model, processed_users, scaler, occupation_encoder, genre_cols
     except FileNotFoundError as e:
-        st.error(f"Critical data missing: {str(e)}")
+        st.error("Critical data missing. Please upload the required files.")
         st.stop()
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
