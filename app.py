@@ -1,6 +1,5 @@
 # Import necessary libraries and modules
 import streamlit as st
-import pandas as pd
 import numpy as np
 import plotly.express as px
 from collections import defaultdict
@@ -63,7 +62,7 @@ def render_recommendations(sorted_movies):
             st.markdown(f"**{idx+1}. {movie_title}**  \n📊 Total Score: `{score_display}`  \n👥 Collaborative: `{cf:.2f}` | 🤖 RL Score: `{rl_display}`")
 
 # Function to process user feedback and update system metrics
-def process_feedback(individual_ratings, rl_learner, movies, genre_cols):
+def process_feedback(individual_ratings, rl_learner, movies):
     # Update movie statistics based on feedback
     st.session_state.total_recommendations = rl_learner.update_stats(
         individual_ratings,  
@@ -146,7 +145,7 @@ def main():
 
             if st.form_submit_button("📤 Submit Ratings"):
                 # Process feedback and update system
-                process_feedback(individual_ratings, rl_learner, movies, genre_cols)
+                process_feedback(individual_ratings, rl_learner, movies)
                 st.success("Feedback recorded! System updating... 🔄")
 
         st.markdown("---")
