@@ -68,7 +68,7 @@ def render_recommendations(sorted_movies):
 
 def process_feedback(individual_ratings, rl_learner, movies, genre_cols):
     st.session_state.total_recommendations = rl_learner.update_stats(
-        individual_ratings,  # Pass the dictionary of movie_id: rating
+        individual_ratings,  
         st.session_state.movie_stats,
         st.session_state.total_recommendations
     )
@@ -78,36 +78,6 @@ def process_feedback(individual_ratings, rl_learner, movies, genre_cols):
     coverage = calculate_coverage(movies['movie_id'].unique(), st.session_state.movie_stats.keys())
     st.session_state.metrics['coverage_scores'].append(coverage)
     
-    age_bin = get_age_bin(st.session_state.user_age)
-    occupation = st.session_state.user_occupation
-    gender = st.session_state.user_gender
-    
-    for movie_id, rating in individual_ratings.items():
-        movie_genres = movies.loc[movies['movie_id'] == movie_id, genre_cols].iloc[0]  
-        genres_list = movie_genres[movie_genres == 1].index.tolist()
-        for genre in genres_list:
-            st.session_state.age_totals[age_bin][genre]['total_rating'] += rating
-            st.session_state.age_totals[age_bin][genre]['count'] += 1
-            st.session_state.occupation_totals[occupation][genre]['total_rating'] += rating
-            st.session_state.occupation_totals[occupation][genre]['count'] += 1
-            st.session_state.gender_totals[gender][genre]['total_rating'] += rating
-            st.session_state.gender_totals[gender][genre]['count'] += 1
-    
-    interaction = len(st.session_state.metrics['all_feedbacks'])
-    for demographic_type, totals in zip(
-        ['Age Group', 'Occupation', 'Gender'],
-        [st.session_state.age_totals, st.session_state.occupation_totals, st.session_state.gender_totals]
-    ):
-        for group, genre_totals in totals.items():
-            for genre, data in genre_totals.items():
-                avg_rating = data['total_rating'] / data['count'] if data['count'] > 0 else 0
-                st.session_state.history.append({
-                    'interaction': interaction,
-                    'demographic_type': demographic_type,
-                    'group': group,
-                    'genre': genre,
-                    'avg_rating': avg_rating
-                })
 
 def main():
     st.title("🎬 Movie Recommender Pro+")
@@ -173,7 +143,7 @@ def main():
 
         st.markdown("---")
         with st.expander("📊 System Performance Dashboard", expanded=True):
-            tab1, tab2, tab3, tab4 = st.tabs(["User Feedback", "Recommendation Quality", "System Health", "Genre Preferences"])
+            tab1, tab2, tab3 = st.tabs(["User Feedback", "Recommendation Quality", "System Health"])
             
             with tab1:
                 if st.session_state.metrics['all_feedbacks']:
@@ -192,37 +162,6 @@ def main():
                          f"{calculate_coverage(movies['movie_id'].unique(), st.session_state.movie_stats.keys()):.2%}")
                 st.metric("Average Recommendations/Movie", 
                          f"{np.mean([s['impressions'] for s in st.session_state.movie_stats.values()]):.1f}")
-            
-            with tab4:
-                if st.session_state.history:
-                    history_df = pd.DataFrame(st.session_state.history)
-                    st.subheader("Current Genre Preferences")
-                    demographic_type = st.selectbox("Demographic Type", ["Age Group", "Occupation", "Gender"])
-                    if demographic_type == "Age Group":
-                        groups = ["0-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
-                        selected_group = st.selectbox("Age Group", groups)
-                    elif demographic_type == "Occupation":
-                        selected_group = st.selectbox("Occupation", users['occupation'].unique().tolist())
-                    else:
-                        selected_group = st.selectbox("Gender", ["M", "F"])
-                    
-                    max_interaction = history_df['interaction'].max()
-                    filtered_df = history_df[(history_df['interaction'] == max_interaction) & 
-                                             (history_df['demographic_type'] == demographic_type) & 
-                                             (history_df['group'] == selected_group)]
-                    
-                    if not filtered_df.empty:
-                        filtered_df = filtered_df.sort_values('avg_rating', ascending=False)
-                        fig = px.bar(filtered_df, x='genre', y='avg_rating',
-                                    title=f"Current Genre Preferences for {demographic_type}: {selected_group}",
-                                    labels={'avg_rating': 'Average Rating', 'genre': 'Genre'},
-                                    text='avg_rating')
-                        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
-                        st.plotly_chart(fig)
-                    else:
-                        st.write("No data yet for this selection.")
-                else:
-                    st.write("Submit ratings to see preferences.")
 
 if __name__ == "__main__":
     main()
